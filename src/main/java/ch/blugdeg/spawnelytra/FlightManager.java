@@ -1,5 +1,8 @@
 package ch.blugdeg.spawnelytra;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
@@ -8,13 +11,20 @@ import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityToggleGlideEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
 import org.bukkit.event.player.PlayerInputEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -22,8 +32,8 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffectType;
@@ -32,15 +42,17 @@ import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Geister-Elytra auf der Insel:
  * - "Berechtigt" ist nur, wer auf der Insel SPAWNT (Erstjoin, Respawn ohne Bett/Anker, Auffangschutz).
  *   Wer hineinfliegt, -maced oder -teleportiert, bekommt nichts.
- * - Berechtigte druecken in der Luft die Leertaste -> Gleiten (wie Vanilla). Der Client bekommt nur eine
- *   vorgetaeuschte Elytra, ein echtes Item existiert nicht.
+ * - Berechtigte druecken in der Luft die Leertaste -> Gleiten (wie Vanilla) mit einer markierten Geister-Elytra,
+ *   die bei der Landung verschwindet; der echte Brustpanzer wird zwischengespeichert.
  * - Boost mit F (Haende tauschen), Cooldown, nach Ablauf der Flugzeit Tragflaechenverlust.
  * - Bodenkontakt, Wasser, Tod, Teleport, Logout usw. beenden den Flug sofort.
  * - Auffangschutz: Wer als Berechtigter nicht gleitet und mit Fallschaden aufschlaegt (oder ins Void faellt),
@@ -48,13 +60,15 @@ import java.util.UUID;
  */
 public final class FlightManager implements Listener {
 
-    private static final ItemStack GHOST_ELYTRA = new ItemStack(Material.ELYTRA);
     /** So viele Ticks darf ein Berechtigter ausserhalb der Insel auf dem Boden stehen, bevor die Berechtigung verfaellt. */
     private static final int GROUND_TICKS_OUTSIDE = 5;
 
     private final SpawnElytraPlugin plugin;
     private final NamespacedKey keyArmed;
     private final NamespacedKey keyRescue;
+    private final NamespacedKey keyGhost;
+    private final NamespacedKey keySaved;
+    private final Set<UUID> debugging = new HashSet<>();
 
     /** berechtigte Spieler -> Ticks, die sie ausserhalb der Insel auf dem Boden standen */
     private final Map<UUID, Integer> armed = new HashMap<>();
@@ -81,6 +95,8 @@ public final class FlightManager implements Listener {
         this.plugin = plugin;
         this.keyArmed = new NamespacedKey(plugin, "armed");
         this.keyRescue = new NamespacedKey(plugin, "rescue");
+        this.keyGhost = new NamespacedKey(plugin, "ghost");
+        this.keySaved = new NamespacedKey(plugin, "saved_chest");
     }
 
     public void start() {
@@ -156,6 +172,8 @@ public final class FlightManager implements Listener {
         boolean needsRescue = pdc.has(keyRescue, PersistentDataType.BYTE);
         pdc.remove(keyArmed);
         pdc.remove(keyRescue);
+        // Absturz/Neustart mitten im Flug: Geister-Elytra weg, Brustpanzer zurueck
+        restoreChest(p);
 
         if (!p.hasPlayedBefore() || needsRescue) {
             if (rescue(p)) return;
@@ -199,8 +217,21 @@ public final class FlightManager implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(PlayerDeathEvent e) {
-        endFlight(e.getEntity(), false);
-        disarm(e.getEntity());
+        Player p = e.getEntity();
+        flights.remove(p.getUniqueId());
+        disarm(p);
+        e.getDrops().removeIf(this::isGhost);
+        PersistentDataContainer pdc = p.getPersistentDataContainer();
+        if (pdc.has(keySaved, PersistentDataType.BYTE_ARRAY)) {
+            ItemStack original = loadSaved(p);
+            pdc.remove(keySaved);
+            if (e.getKeepInventory()) {
+                removeGhosts(p);
+                p.getInventory().setChestplate(original);
+            } else if (original != null) {
+                e.getDrops().add(original);
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -228,22 +259,33 @@ public final class FlightManager implements Listener {
         boolean jump = e.getInput().isJump();
         boolean wasJump = Boolean.TRUE.equals(lastJump.put(p.getUniqueId(), jump));
         if (!jump || wasJump) return; // nur beim Druecken, nicht beim Halten
-        if (!armed.containsKey(p.getUniqueId()) || isFlying(p)) return;
-        if (canStartGlide(p)) {
+        if (isFlying(p)) return;
+        if (!armed.containsKey(p.getUniqueId())) {
+            dbg(p, "Leertaste: nicht berechtigt");
+            return;
+        }
+        String reason = whyNoGlide(p);
+        if (reason == null) {
             disarm(p);
             startFlight(p, p.getLocation());
+        } else {
+            dbg(p, "Leertaste: " + reason);
         }
     }
 
-    /** Gleiche Bedingungen wie Vanilla: in der Luft, nicht im Wasser, kein Fahrzeug, keine Schwebe. */
-    private boolean canStartGlide(Player p) {
+    /** Gleiche Bedingungen wie Vanilla. null = darf starten, sonst der Grund. */
+    private String whyNoGlide(Player p) {
         GameMode gm = p.getGameMode();
-        if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) return false;
-        if (p.isOnGround() || p.isGliding() || p.isFlying() || p.isInsideVehicle()) return false;
-        if (p.isInWater() || p.isInLava() || p.isClimbing()) return false;
-        if (p.hasPotionEffect(PotionEffectType.LEVITATION)) return false;
+        if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) return "Modus " + gm;
+        if (p.isOnGround()) return "steht auf dem Boden (normaler Sprung)";
+        if (p.isGliding() || p.isFlying()) return "fliegt bereits";
+        if (p.isInsideVehicle()) return "sitzt in Fahrzeug";
+        if (p.isInWater() || p.isInLava()) return "im Wasser/Lava";
+        if (p.isClimbing()) return "klettert";
+        if (p.hasPotionEffect(PotionEffectType.LEVITATION)) return "Schwebe-Effekt";
         ItemStack chest = p.getInventory().getChestplate();
-        return chest == null || chest.getType() != Material.ELYTRA; // mit echter Elytra greift Vanilla
+        if (chest != null && chest.getType() == Material.ELYTRA) return "trägt eigene Elytra";
+        return null;
     }
 
     // --- Flug ----------------------------------------------------------------
@@ -251,10 +293,11 @@ public final class FlightManager implements Listener {
     private void startFlight(Player p, Location loc) {
         Flight f = new Flight(tick, loc.clone());
         flights.put(p.getUniqueId(), f);
+        equipGhost(p);
         p.setGliding(true);
-        sendGhost(p);
         p.playSound(loc, Sound.ITEM_ARMOR_EQUIP_ELYTRA, 1f, 1.2f);
         p.sendActionBar(plugin.msg("start"));
+        dbg(p, "Flug gestartet (gleitet=" + p.isGliding() + ")");
     }
 
     private void endFlight(Player p, boolean notify) {
@@ -263,7 +306,8 @@ public final class FlightManager implements Listener {
         graceUntil.put(p.getUniqueId(), tick + plugin.settings().graceTicks());
         if (!p.isOnline()) return;
         p.setGliding(false);
-        restoreEquipment(p);
+        restoreChest(p);
+        dbg(p, "Flug beendet nach " + ((tick - f.startTick) / 20) + " s");
         if (notify) {
             p.sendActionBar(plugin.msg("end"));
             p.getWorld().spawnParticle(Particle.CLOUD, p.getLocation().add(0, 1, 0), 15, 0.4, 0.4, 0.4, 0.02);
@@ -273,23 +317,128 @@ public final class FlightManager implements Listener {
         if (notify && plugin.onIsland(p.getLocation())) armIfOnIsland(p, p.getLocation());
     }
 
-    /** Nur der Client sieht eine Elytra im Brustslot – serverseitig bleibt alles unveraendert. */
-    private void sendGhost(Player p) {
-        p.sendEquipmentChange(p, EquipmentSlot.CHEST, GHOST_ELYTRA);
+    // --- Geister-Elytra als echtes, markiertes Item ---------------------------
+    // Erzwungenes Gleiten ohne Item verwirft der 26.2-Client. Darum: echte Elytra, unzerbrechlich,
+    // Fluch der Bindung + des Verschwindens, nicht verschieb-/droppbar. Der Brustpanzer wird im
+    // Spielerprofil (PDC) zwischengespeichert – auch ein Absturz verliert nichts.
+
+    private ItemStack ghostItem() {
+        ItemStack it = new ItemStack(Material.ELYTRA);
+        it.editMeta(m -> {
+            m.displayName(Component.text("Geister-Elytra", NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
+            m.setUnbreakable(true);
+            m.addEnchant(Enchantment.BINDING_CURSE, 1, true);
+            m.addEnchant(Enchantment.VANISHING_CURSE, 1, true);
+            m.getPersistentDataContainer().set(keyGhost, PersistentDataType.BYTE, (byte) 1);
+        });
+        return it;
     }
 
-    private void restoreEquipment(Player p) {
-        ItemStack real = p.getInventory().getChestplate();
-        p.sendEquipmentChange(p, EquipmentSlot.CHEST, real == null ? new ItemStack(Material.AIR) : real);
-        p.updateInventory();
+    public boolean isGhost(ItemStack it) {
+        return it != null && it.getType() == Material.ELYTRA && it.hasItemMeta()
+                && it.getItemMeta().getPersistentDataContainer().has(keyGhost, PersistentDataType.BYTE);
+    }
+
+    private void equipGhost(Player p) {
+        PersistentDataContainer pdc = p.getPersistentDataContainer();
+        PlayerInventory inv = p.getInventory();
+        if (!pdc.has(keySaved, PersistentDataType.BYTE_ARRAY)) {
+            ItemStack cur = inv.getChestplate();
+            byte[] data = (cur == null || cur.getType().isAir() || isGhost(cur)) ? new byte[0] : cur.serializeAsBytes();
+            pdc.set(keySaved, PersistentDataType.BYTE_ARRAY, data);
+        }
+        inv.setChestplate(ghostItem());
+    }
+
+    private ItemStack loadSaved(Player p) {
+        byte[] b = p.getPersistentDataContainer().get(keySaved, PersistentDataType.BYTE_ARRAY);
+        if (b == null || b.length == 0) return null;
+        try {
+            return ItemStack.deserializeBytes(b);
+        } catch (Exception ex) {
+            plugin.getLogger().warning("Gespeicherter Brustpanzer von " + p.getName() + " nicht lesbar: " + ex);
+            return null;
+        }
+    }
+
+    private void removeGhosts(Player p) {
+        PlayerInventory inv = p.getInventory();
+        ItemStack[] contents = inv.getContents();
+        for (int i = 0; i < contents.length; i++) {
+            if (isGhost(contents[i])) inv.setItem(i, null);
+        }
+        if (isGhost(p.getItemOnCursor())) p.setItemOnCursor(null);
+    }
+
+    /** Geister-Elytra entfernen und den echten Brustpanzer zurueckgeben. */
+    private void restoreChest(Player p) {
+        PersistentDataContainer pdc = p.getPersistentDataContainer();
+        if (!pdc.has(keySaved, PersistentDataType.BYTE_ARRAY)) {
+            removeGhosts(p);
+            return;
+        }
+        ItemStack original = loadSaved(p);
+        pdc.remove(keySaved);
+        removeGhosts(p);
+        if (original == null) return;
+        PlayerInventory inv = p.getInventory();
+        ItemStack cur = inv.getChestplate();
+        if (cur == null || cur.getType().isAir()) {
+            inv.setChestplate(original);
+        } else {
+            // Slot belegt (sollte nicht vorkommen) -> ins Inventar, sonst vor die Fuesse
+            inv.addItem(original).values().forEach(rest -> p.getWorld().dropItemNaturally(p.getLocation(), rest));
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onToggleGlide(EntityToggleGlideEvent e) {
         if (!(e.getEntity() instanceof Player p)) return;
-        if (!e.isGliding() && flights.containsKey(p.getUniqueId())) {
-            // Server will das Gleiten beenden, weil keine echte Elytra getragen wird
+        // Beim Landen stoppt Vanilla das Gleiten – der Tick beendet dann den Flug sauber.
+        if (!e.isGliding() && flights.containsKey(p.getUniqueId()) && !p.isOnGround() && !p.isInWater()) {
             e.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onInvClick(InventoryClickEvent e) {
+        if (isGhost(e.getCurrentItem()) || isGhost(e.getCursor())) e.setCancelled(true);
+        if (e.getClick() == ClickType.NUMBER_KEY && e.getWhoClicked() instanceof Player p
+                && isGhost(p.getInventory().getItem(e.getHotbarButton()))) e.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onInvDrag(InventoryDragEvent e) {
+        if (isGhost(e.getOldCursor())) e.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onDrop(PlayerDropItemEvent e) {
+        if (isGhost(e.getItemDrop().getItemStack())) e.setCancelled(true);
+    }
+
+    /** Waehrend des Geister-Flugs keine Raketen – Boost nur mit F. */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onRocket(PlayerInteractEvent e) {
+        if (!isFlying(e.getPlayer())) return;
+        ItemStack it = e.getItem();
+        if (it != null && it.getType() == Material.FIREWORK_ROCKET) {
+            e.setUseItemInHand(Event.Result.DENY);
+            e.setCancelled(true);
+        }
+    }
+
+    // --- Debug ------------------------------------------------------------------
+
+    public boolean toggleDebug(Player p) {
+        if (debugging.remove(p.getUniqueId())) return false;
+        debugging.add(p.getUniqueId());
+        return true;
+    }
+
+    private void dbg(Player p, String text) {
+        if (debugging.contains(p.getUniqueId())) {
+            p.sendMessage(Component.text("[SE] " + text, NamedTextColor.DARK_GRAY));
         }
     }
 
@@ -422,7 +571,10 @@ public final class FlightManager implements Listener {
             }
 
             if (age % 10 == 0) {
-                sendGhost(p); // falls ein Inventar-Update die Fake-Elytra ueberschrieben hat
+                if (!isGhost(p.getInventory().getChestplate())) { // Elytra irgendwie weg -> Flug vorbei
+                    endFlight(p, true);
+                    continue;
+                }
                 sendHud(p, f, age, decaying);
             }
         }

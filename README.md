@@ -9,7 +9,7 @@ Auf der Insel gilt: kein Bauen/Abbauen, kein PvP, keine Gegenstände (Raketen, W
 
 ## Geister-Elytra
 - Nur wer **auf der Insel spawnt** (Erstjoin, Respawn ohne Bett/Anker) ist berechtigt. Hineinfliegen, -macen oder -teleportieren gibt nichts.
-- Von der Insel springen und **in der Luft die Leertaste** drücken → man gleitet (wie Vanilla). Nur der eigene Client sieht eine Elytra, es gibt kein echtes Item.
+- Von der Insel springen und **in der Luft die Leertaste** drücken → man gleitet (wie Vanilla). Man bekommt eine markierte Geister-Elytra (unzerbrechlich, nicht verschieb- oder droppbar), der eigene Brustpanzer wird zwischengespeichert und bei der Landung zurückgegeben.
 - **[F]** = Boost wie eine Rakete Stufe 2, alle 5 s.
 - Nach **60 s** verliert sie stark an Tragfläche, man sinkt zu Boden.
 - **Bodenkontakt**, Wasser, Tod, Teleport, Logout → sofort alles weg. Kein Fall-/Wandaufprallschaden während des Flugs und 3 s danach.

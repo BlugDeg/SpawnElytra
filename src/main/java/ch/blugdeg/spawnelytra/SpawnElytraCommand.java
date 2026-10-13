@@ -74,6 +74,11 @@ public final class SpawnElytraCommand implements TabExecutor {
                     say(sender, "Du musst auf der Insel stehen (und darfst nicht schon fliegen).", NamedTextColor.RED);
                 }
             }
+            case "debug" -> {
+                if (!(sender instanceof Player p) || !admin(sender)) return true;
+                boolean on = plugin.flights().toggleDebug(p);
+                say(sender, "Debug-Ausgaben " + (on ? "AN" : "AUS") + ".", NamedTextColor.GRAY);
+            }
             case "reload" -> {
                 if (!admin(sender)) return true;
                 plugin.reloadAll();
@@ -83,7 +88,7 @@ public final class SpawnElytraCommand implements TabExecutor {
                 say(sender, "SpawnElytra", NamedTextColor.AQUA);
                 say(sender, "/" + label + " pos1 | pos2   – Ecken der Insel (deine Position, inkl. Luftraum)", NamedTextColor.GRAY);
                 say(sender, "/" + label + " setspawn      – Spawnpunkt auf der Insel", NamedTextColor.GRAY);
-                say(sender, "/" + label + " info | bypass | test | reload", NamedTextColor.GRAY);
+                say(sender, "/" + label + " info | bypass | test | debug | reload", NamedTextColor.GRAY);
             }
         }
         return true;
@@ -99,7 +104,7 @@ public final class SpawnElytraCommand implements TabExecutor {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             String p = args[0].toLowerCase(Locale.ROOT);
-            return List.of("pos1", "pos2", "setspawn", "info", "bypass", "test", "reload", "hilfe")
+            return List.of("pos1", "pos2", "setspawn", "info", "bypass", "test", "debug", "reload", "hilfe")
                     .stream().filter(o -> o.startsWith(p)).toList();
         }
         return List.of();
