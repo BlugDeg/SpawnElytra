@@ -1,28 +1,21 @@
 # SpawnElytra – Konfiguration
 #
-# Bereiche setzt man am einfachsten ingame:
-#   /se pos1 launch   /se pos2 launch    -> Absprungbereich (Geister-Elytra)
-#   /se pos1 protect  /se pos2 protect   -> Spawnschutz-Bereich
-#   /se setspawn                         -> Spawnpunkt (Erstjoin + Respawn ohne Bett/Anker)
+# Die Insel ist Spawn, Schutzzone und Absprung zugleich. Ingame setzen:
+#   /se pos1  /se pos2   -> zwei gegenueberliegende Ecken des Insel-Quaders (inkl. Luftraum/"Kuppel")
+#   /se setspawn         -> Spawnpunkt auf der Insel (Erstjoin + Respawn ohne Bett/Anker + Auffangschutz)
 # Format von Hand: "welt,x,y,z" (Blockkoordinaten, beide Ecken inklusive)
+# Ober- und unterhalb des Quaders gilt kein Schutz.
 
-areas:
-  launch:
-    pos1: ''
-    pos2: ''
-  protect:
-    pos1: ''
-    pos2: ''
+island:
+  pos1: ''
+  pos2: ''
 
-# Format: "welt,x,y,z,yaw,pitch". Leer = Vanilla-Verhalten (dann gamerule spawnRadius auf 0 setzen!)
+# Format: "welt,x,y,z,yaw,pitch"
 spawn-point: ''
 
 flight:
   # So lange fliegt die Elytra normal und der Boost ist verfuegbar
   duration-seconds: 60
-  # Mindesthoehe ueber festem Boden beim Verlassen des Absprungbereichs.
-  # Wer tiefer (z. B. zu Fuss) hinausgeht, verliert die Berechtigung.
-  min-height-above-ground: 2
   # Sicherheitsgrenze: danach endet der Flug immer
   max-seconds: 300
   # Nach Landung/Ende: so lange kein Fall- und Wandaufprallschaden
@@ -45,18 +38,17 @@ boost:
   speed: 1.5
 
 protection:
-  # Essen im Spawn erlauben (alle anderen Gegenstaende sind gesperrt)
+  # Essen auf der Insel erlauben (alle anderen Gegenstaende sind gesperrt)
   allow-food: true
-  # true = Schutz gilt ueber die ganze Hoehe (Bedrock bis Himmel), nur X/Z der Ecken zaehlen.
-  # false = nur zwischen den Y-Werten von pos1/pos2.
-  full-height: true
 
 messages:
-  armed: '<gray>Spring vom Spawn ab, um mit der <aqua>Geister-Elytra</aqua> zu gleiten.</gray>'
+  armed: '<gray>Spring von der Insel und drück in der Luft <yellow>[Leertaste]</yellow>, um zu gleiten.</gray>'
+  falling: '<yellow>Drück [Leertaste] zum Gleiten!</yellow>'
   start: '<aqua>Geister-Elytra aktiv!</aqua> <gray>Boost mit <yellow>[F]</yellow></gray>'
   hud-ready: '<aqua>✈ <white><time>s</white></aqua> <dark_gray>|</dark_gray> <green>Boost [F] bereit</green>'
   hud-cooldown: '<aqua>✈ <white><time>s</white></aqua> <dark_gray>|</dark_gray> <gray>Boost in <yellow><cd>s</yellow></gray>'
   hud-decay: '<red>Die Tragfläche lässt nach …</red>'
   no-boost: '<red>Kein Boost mehr.</red>'
   end: '<gray>Die Geister-Elytra hat sich aufgelöst.</gray>'
-  protected: '<red>Das ist im Spawn nicht erlaubt.</red>'
+  rescued: '<aqua>Aufgefangen!</aqua> <gray>Du bist zurück am Spawn.</gray>'
+  protected: '<red>Das ist auf der Insel nicht erlaubt.</red>'

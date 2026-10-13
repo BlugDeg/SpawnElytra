@@ -232,7 +232,7 @@ public final class ProtectionListener implements Listener {
     }
 
     private void sweepMobs() {
-        Area a = plugin.protectArea();
+        Area a = plugin.island();
         if (a == null) return;
         World w = Bukkit.getWorld(a.world());
         if (w == null) return;

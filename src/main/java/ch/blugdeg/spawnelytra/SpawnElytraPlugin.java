@@ -18,22 +18,22 @@ public final class SpawnElytraPlugin extends JavaPlugin {
 
     private final Set<UUID> bypassing = new HashSet<>();
     private Settings settings;
-    private Area launchArea;
-    private Area protectArea;
+    private Area island;
     private Location spawnPoint;
     private FlightManager flights;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        migrateConfig();
         reloadAll();
 
         flights = new FlightManager(this);
         getServer().getPluginManager().registerEvents(flights, this);
         ProtectionListener protection = new ProtectionListener(this);
         getServer().getPluginManager().registerEvents(protection, this);
-        protection.startMobSweep();
         flights.start();
+        protection.startMobSweep();
 
         PluginCommand cmd = getCommand("spawnelytra");
         if (cmd != null) {
@@ -42,8 +42,8 @@ public final class SpawnElytraPlugin extends JavaPlugin {
             cmd.setTabCompleter(handler);
         }
 
-        if (launchArea == null) getLogger().warning("Absprungbereich ist noch nicht gesetzt (/se pos1|pos2 launch).");
-        if (protectArea == null) getLogger().warning("Spawnschutz-Bereich ist noch nicht gesetzt (/se pos1|pos2 protect).");
+        if (island == null) getLogger().warning("Insel ist noch nicht gesetzt (/se pos1 und /se pos2).");
+        if (spawnPoint == null) getLogger().warning("Spawnpunkt ist noch nicht gesetzt (/se setspawn).");
     }
 
     @Override
@@ -51,23 +51,42 @@ public final class SpawnElytraPlugin extends JavaPlugin {
         if (flights != null) flights.endAll();
     }
 
+    /** Alte Konfiguration (launch/protect) auf die Insel umstellen und neue Standardwerte ergaenzen. */
+    private void migrateConfig() {
+        var c = getConfig();
+        boolean changed = false;
+        if (c.getString("island.pos1", "").isBlank() && !c.getString("areas.protect.pos1", "").isBlank()) {
+            c.set("island.pos1", c.getString("areas.protect.pos1"));
+            c.set("island.pos2", c.getString("areas.protect.pos2"));
+            getLogger().info("Alter Schutzbereich als Insel uebernommen – bitte mit /se info pruefen.");
+            changed = true;
+        }
+        if (c.contains("areas")) {
+            c.set("areas", null);
+            c.set("messages", null); // Texte haben sich geaendert -> neue Standardtexte uebernehmen
+            changed = true;
+        }
+        if (c.contains("protection.full-height")) {
+            c.set("protection.full-height", null);
+            changed = true;
+        }
+        c.options().copyDefaults(true);
+        saveConfig();
+        if (changed) getLogger().info("config.yml auf das Insel-Format umgestellt.");
+    }
+
     public void reloadAll() {
         reloadConfig();
         settings = Settings.load(getConfig());
-        launchArea = loadArea("launch");
-        protectArea = loadArea("protect");
+        island = Area.of(
+                Area.BlockPos.parse(getConfig().getString("island.pos1", "")),
+                Area.BlockPos.parse(getConfig().getString("island.pos2", "")));
         spawnPoint = parseSpawn(getConfig().getString("spawn-point", ""));
     }
 
-    private Area loadArea(String key) {
-        return Area.of(
-                Area.BlockPos.parse(getConfig().getString("areas." + key + ".pos1", "")),
-                Area.BlockPos.parse(getConfig().getString("areas." + key + ".pos2", "")));
-    }
-
-    /** Setzt eine Ecke, speichert die Config und laedt neu. */
-    public void setCorner(String area, int corner, Location loc) {
-        getConfig().set("areas." + area + ".pos" + corner, Area.BlockPos.of(loc).serialize());
+    /** Setzt eine Ecke der Insel, speichert die Config und laedt neu. */
+    public void setCorner(int corner, Location loc) {
+        getConfig().set("island.pos" + corner, Area.BlockPos.of(loc).serialize());
         saveConfig();
         reloadAll();
     }
@@ -103,11 +122,15 @@ public final class SpawnElytraPlugin extends JavaPlugin {
         return MiniMessage.miniMessage().deserialize(raw, resolvers);
     }
 
-    // --- Spawnschutz-Helfer -------------------------------------------------
+    // --- Insel / Schutz -----------------------------------------------------
 
+    public boolean onIsland(Location loc) {
+        return island != null && island.contains(loc);
+    }
+
+    /** Schutz gilt genau im Insel-Quader. */
     public boolean isProtected(Location loc) {
-        if (protectArea == null) return false;
-        return settings.protectFullHeight() ? protectArea.containsColumn(loc) : protectArea.contains(loc);
+        return onIsland(loc);
     }
 
     public boolean canBypass(Player p) {
@@ -128,8 +151,7 @@ public final class SpawnElytraPlugin extends JavaPlugin {
     // --- Getter --------------------------------------------------------------
 
     public Settings settings() { return settings; }
-    public Area launchArea() { return launchArea; }
-    public Area protectArea() { return protectArea; }
+    public Area island() { return island; }
     public Location spawnPoint() { return spawnPoint == null ? null : spawnPoint.clone(); }
     public FlightManager flights() { return flights; }
 }

@@ -5,9 +5,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
-import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -16,40 +16,51 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityToggleGlideEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
+import org.bukkit.event.player.PlayerInputEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
- * Geister-Elytra:
- * - "berechtigt" wird nur, wer im Absprungbereich ERSCHEINT (Join, Respawn) – nicht wer hineinfliegt/-laeuft.
- * - Verlaesst ein Berechtigter den Bereich in der Luft, startet der Flug (Gliding wird erzwungen,
- *   der Client bekommt nur eine vorgetaeuschte Elytra, es existiert kein echtes Item).
+ * Geister-Elytra auf der Insel:
+ * - "Berechtigt" ist nur, wer auf der Insel SPAWNT (Erstjoin, Respawn ohne Bett/Anker, Auffangschutz).
+ *   Wer hineinfliegt, -maced oder -teleportiert, bekommt nichts.
+ * - Berechtigte druecken in der Luft die Leertaste -> Gleiten (wie Vanilla). Der Client bekommt nur eine
+ *   vorgetaeuschte Elytra, ein echtes Item existiert nicht.
  * - Boost mit F (Haende tauschen), Cooldown, nach Ablauf der Flugzeit Tragflaechenverlust.
- * - Bodenkontakt, Wasser, Tod, Teleport, Logout usw. beenden alles sofort.
+ * - Bodenkontakt, Wasser, Tod, Teleport, Logout usw. beenden den Flug sofort.
+ * - Auffangschutz: Wer als Berechtigter nicht gleitet und mit Fallschaden aufschlaegt (oder ins Void faellt),
+ *   wird ohne Schaden zum Spawn teleportiert.
  */
 public final class FlightManager implements Listener {
 
     private static final ItemStack GHOST_ELYTRA = new ItemStack(Material.ELYTRA);
+    /** So viele Ticks darf ein Berechtigter ausserhalb der Insel auf dem Boden stehen, bevor die Berechtigung verfaellt. */
+    private static final int GROUND_TICKS_OUTSIDE = 5;
 
     private final SpawnElytraPlugin plugin;
-    private final Set<UUID> armed = new HashSet<>();
+    private final NamespacedKey keyArmed;
+    private final NamespacedKey keyRescue;
+
+    /** berechtigte Spieler -> Ticks, die sie ausserhalb der Insel auf dem Boden standen */
+    private final Map<UUID, Integer> armed = new HashMap<>();
     private final Map<UUID, Flight> flights = new HashMap<>();
     private final Map<UUID, Long> graceUntil = new HashMap<>();
+    private final Map<UUID, Boolean> lastJump = new HashMap<>();
     private long tick;
     private BukkitTask task;
 
@@ -68,6 +79,8 @@ public final class FlightManager implements Listener {
 
     public FlightManager(SpawnElytraPlugin plugin) {
         this.plugin = plugin;
+        this.keyArmed = new NamespacedKey(plugin, "armed");
+        this.keyRescue = new NamespacedKey(plugin, "rescue");
     }
 
     public void start() {
@@ -75,6 +88,7 @@ public final class FlightManager implements Listener {
     }
 
     public void endAll() {
+        for (Player p : Bukkit.getOnlinePlayers()) saveState(p);
         for (UUID id : new ArrayList<>(flights.keySet())) {
             Player p = Bukkit.getPlayer(id);
             if (p != null) endFlight(p, false);
@@ -89,17 +103,15 @@ public final class FlightManager implements Listener {
     }
 
     public boolean isArmed(Player p) {
-        return armed.contains(p.getUniqueId());
+        return armed.containsKey(p.getUniqueId());
     }
 
     // --- Berechtigung --------------------------------------------------------
 
-    /** Berechtigt den Spieler, wenn er sich im Absprungbereich befindet. */
-    public boolean armIfInside(Player p, Location where) {
-        Area launch = plugin.launchArea();
-        if (launch == null || !launch.contains(where)) return false;
-        if (isFlying(p)) return false;
-        armed.add(p.getUniqueId());
+    /** Berechtigt den Spieler, wenn der Ort auf der Insel liegt. */
+    public boolean armIfOnIsland(Player p, Location where) {
+        if (!plugin.onIsland(where) || isFlying(p)) return false;
+        armed.put(p.getUniqueId(), 0);
         p.sendActionBar(plugin.msg("armed"));
         return true;
     }
@@ -108,17 +120,51 @@ public final class FlightManager implements Listener {
         armed.remove(p.getUniqueId());
     }
 
+    /** Zum Spawn teleportieren und berechtigen (Auffangschutz, Login nach Absturz im Flug). */
+    private boolean rescue(Player p) {
+        Location sp = plugin.spawnPoint();
+        if (sp == null) return false;
+        endFlight(p, false);
+        disarm(p);
+        p.setFallDistance(0);
+        p.setVelocity(new Vector());
+        p.teleport(sp);
+        graceUntil.put(p.getUniqueId(), tick + plugin.settings().graceTicks());
+        armIfOnIsland(p, sp);
+        return true;
+    }
+
+    /** Beim Verlassen merken, damit ein Relog nichts verschenkt und niemand in der Luft einloggt. */
+    private void saveState(Player p) {
+        PersistentDataContainer pdc = p.getPersistentDataContainer();
+        pdc.remove(keyArmed);
+        pdc.remove(keyRescue);
+        UUID id = p.getUniqueId();
+        boolean onIsland = plugin.onIsland(p.getLocation());
+        if (flights.containsKey(id) || (armed.containsKey(id) && !onIsland)) {
+            pdc.set(keyRescue, PersistentDataType.BYTE, (byte) 1);
+        } else if (armed.containsKey(id)) {
+            pdc.set(keyArmed, PersistentDataType.BYTE, (byte) 1);
+        }
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent e) {
         Player p = e.getPlayer();
-        Location sp = plugin.spawnPoint();
-        if (!p.hasPlayedBefore() && sp != null) {
-            p.teleport(sp);
+        PersistentDataContainer pdc = p.getPersistentDataContainer();
+        boolean wasArmed = pdc.has(keyArmed, PersistentDataType.BYTE);
+        boolean needsRescue = pdc.has(keyRescue, PersistentDataType.BYTE);
+        pdc.remove(keyArmed);
+        pdc.remove(keyRescue);
+
+        if (!p.hasPlayedBefore() || needsRescue) {
+            if (rescue(p)) return;
         }
-        armIfInside(p, p.getLocation());
+        // Erstjoin ohne gesetzten Spawnpunkt: Vanilla-Spawn zaehlt, falls er auf der Insel liegt
+        if (wasArmed || !p.hasPlayedBefore()) armIfOnIsland(p, p.getLocation());
     }
 
-    /** Respawn ohne Bett/Anker -> eigener Spawnpunkt (falls gesetzt). */
+    /** Respawn ohne Bett/Anker -> Spawnpunkt auf der Insel. */
     @EventHandler(priority = EventPriority.HIGH)
     public void onRespawnLocation(PlayerRespawnEvent e) {
         Location sp = plugin.spawnPoint();
@@ -135,16 +181,19 @@ public final class FlightManager implements Listener {
         Location to = e.getRespawnLocation();
         // Einen Tick spaeter, wenn der Spieler wirklich dort steht
         Bukkit.getScheduler().runTask(plugin, () -> {
-            if (p.isOnline()) armIfInside(p, to);
+            if (p.isOnline()) armIfOnIsland(p, to);
         });
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
-        UUID id = e.getPlayer().getUniqueId();
-        endFlight(e.getPlayer(), false);
+        Player p = e.getPlayer();
+        UUID id = p.getUniqueId();
+        saveState(p);
+        endFlight(p, false);
         armed.remove(id);
         graceUntil.remove(id);
+        lastJump.remove(id);
         plugin.forgetBypass(id);
     }
 
@@ -155,35 +204,11 @@ public final class FlightManager implements Listener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onMove(PlayerMoveEvent e) {
-        Player p = e.getPlayer();
-        if (!armed.contains(p.getUniqueId())) return;
-        Area launch = plugin.launchArea();
-        if (launch == null) {
-            disarm(p);
-            return;
-        }
-        Location to = e.getTo();
-        if (launch.contains(to)) return;
-
-        // Bereich verlassen: in der Luft -> Flug, sonst Berechtigung weg
-        disarm(p);
-        GameMode gm = p.getGameMode();
-        if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) return;
-        if (p.isInsideVehicle() || p.isFlying()) return;
-        ItemStack chest = p.getInventory().getChestplate();
-        if (chest != null && chest.getType() == Material.ELYTRA) return; // hat eine echte
-        if (!p.isOnGround() && heightAboveGround(to) >= plugin.settings().minHeightAboveGround()) {
-            startFlight(p, to);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTeleport(PlayerTeleportEvent e) {
         Player p = e.getPlayer();
         endFlight(p, false);
-        Area launch = plugin.launchArea();
-        if (launch == null || !launch.contains(e.getTo())) disarm(p);
+        // Teleport INNERHALB der Insel behaelt die Berechtigung, hinein gibt es keine neue.
+        if (!plugin.onIsland(e.getTo())) disarm(p);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -191,7 +216,34 @@ public final class FlightManager implements Listener {
         GameMode gm = e.getNewGameMode();
         if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) {
             endFlight(e.getPlayer(), false);
+            disarm(e.getPlayer());
         }
+    }
+
+    // --- Start per Leertaste ---------------------------------------------------
+
+    @EventHandler
+    public void onInput(PlayerInputEvent e) {
+        Player p = e.getPlayer();
+        boolean jump = e.getInput().isJump();
+        boolean wasJump = Boolean.TRUE.equals(lastJump.put(p.getUniqueId(), jump));
+        if (!jump || wasJump) return; // nur beim Druecken, nicht beim Halten
+        if (!armed.containsKey(p.getUniqueId()) || isFlying(p)) return;
+        if (canStartGlide(p)) {
+            disarm(p);
+            startFlight(p, p.getLocation());
+        }
+    }
+
+    /** Gleiche Bedingungen wie Vanilla: in der Luft, nicht im Wasser, kein Fahrzeug, keine Schwebe. */
+    private boolean canStartGlide(Player p) {
+        GameMode gm = p.getGameMode();
+        if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) return false;
+        if (p.isOnGround() || p.isGliding() || p.isFlying() || p.isInsideVehicle()) return false;
+        if (p.isInWater() || p.isInLava() || p.isClimbing()) return false;
+        if (p.hasPotionEffect(PotionEffectType.LEVITATION)) return false;
+        ItemStack chest = p.getInventory().getChestplate();
+        return chest == null || chest.getType() != Material.ELYTRA; // mit echter Elytra greift Vanilla
     }
 
     // --- Flug ----------------------------------------------------------------
@@ -217,6 +269,8 @@ public final class FlightManager implements Listener {
             p.getWorld().spawnParticle(Particle.CLOUD, p.getLocation().add(0, 1, 0), 15, 0.4, 0.4, 0.4, 0.02);
             p.playSound(p.getLocation(), Sound.ENTITY_PHANTOM_FLAP, 0.7f, 1.6f);
         }
+        // Gelandet auf der Insel (nie weg gewesen) -> wieder berechtigt
+        if (notify && plugin.onIsland(p.getLocation())) armIfOnIsland(p, p.getLocation());
     }
 
     /** Nur der Client sieht eine Elytra im Brustslot – serverseitig bleibt alles unveraendert. */
@@ -256,22 +310,70 @@ public final class FlightManager implements Listener {
         p.getWorld().playSound(p.getLocation(), Sound.ENTITY_FIREWORK_ROCKET_LAUNCH, 1f, 1f);
     }
 
+    // --- Schaden: Flug-Schutz und Auffangschutz -----------------------------
+
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent e) {
         if (!(e.getEntity() instanceof Player p)) return;
+        UUID id = p.getUniqueId();
         EntityDamageEvent.DamageCause c = e.getCause();
-        if (c != EntityDamageEvent.DamageCause.FALL && c != EntityDamageEvent.DamageCause.FLY_INTO_WALL) return;
-        Long grace = graceUntil.get(p.getUniqueId());
-        if (flights.containsKey(p.getUniqueId()) || (grace != null && tick <= grace)) {
+
+        // Void: Fliegende und Berechtigte werden gerettet
+        if (c == EntityDamageEvent.DamageCause.VOID && (flights.containsKey(id) || armed.containsKey(id))) {
             e.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> rescue(p));
+            return;
+        }
+        if (c != EntityDamageEvent.DamageCause.FALL && c != EntityDamageEvent.DamageCause.FLY_INTO_WALL) return;
+
+        Long grace = graceUntil.get(id);
+        if (flights.containsKey(id) || (grace != null && tick <= grace)) {
+            e.setCancelled(true);
+            return;
+        }
+        // Auffangschutz: von der Insel gefallen, ohne zu gleiten
+        if (c == EntityDamageEvent.DamageCause.FALL && armed.containsKey(id) && !plugin.onIsland(p.getLocation())) {
+            e.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (p.isOnline() && rescue(p)) p.sendActionBar(plugin.msg("rescued"));
+            });
         }
     }
+
+    // --- Tick -------------------------------------------------------------------
 
     private void tickAll() {
         tick++;
         if (!graceUntil.isEmpty()) graceUntil.values().removeIf(t -> t < tick);
-        if (flights.isEmpty()) return;
+        if (!armed.isEmpty()) tickArmed();
+        if (!flights.isEmpty()) tickFlights();
+    }
 
+    /** Berechtigte ausserhalb der Insel, die stehen bleiben (ohne Fallschaden), verlieren die Berechtigung. */
+    private void tickArmed() {
+        for (Map.Entry<UUID, Integer> entry : new ArrayList<>(armed.entrySet())) {
+            Player p = Bukkit.getPlayer(entry.getKey());
+            if (p == null || !p.isOnline() || plugin.island() == null) {
+                armed.remove(entry.getKey());
+                continue;
+            }
+            Location loc = p.getLocation();
+            if (plugin.onIsland(loc)) {
+                armed.put(entry.getKey(), 0);
+            } else if (p.isOnGround() || p.isInWater() || p.isInLava() || p.isInsideVehicle()) {
+                int ground = entry.getValue() + 1;
+                if (ground > GROUND_TICKS_OUTSIDE) armed.remove(entry.getKey());
+                else armed.put(entry.getKey(), ground);
+                continue;
+            }
+            // Hinweis beim Fallen
+            if (!p.isOnGround() && p.getFallDistance() > 3f && tick % 10 == 0) {
+                p.sendActionBar(plugin.msg("falling"));
+            }
+        }
+    }
+
+    private void tickFlights() {
         Settings s = plugin.settings();
         for (Map.Entry<UUID, Flight> entry : new ArrayList<>(flights.entrySet())) {
             Player p = Bukkit.getPlayer(entry.getKey());
@@ -341,17 +443,5 @@ public final class FlightManager implements Listener {
         } else {
             p.sendActionBar(plugin.msg("hud-ready", Placeholder.unparsed("time", String.valueOf(left))));
         }
-    }
-
-    /** Abstand nach unten bis zum ersten nicht-passierbaren Block (gedeckelt). */
-    private static double heightAboveGround(Location loc) {
-        int max = 16;
-        Block start = loc.getBlock();
-        for (int i = 0; i <= max; i++) {
-            Block b = start.getRelative(0, -i, 0);
-            if (b.getY() < loc.getWorld().getMinHeight()) return max;
-            if (!b.isPassable()) return loc.getY() - (b.getY() + 1);
-        }
-        return max;
     }
 }

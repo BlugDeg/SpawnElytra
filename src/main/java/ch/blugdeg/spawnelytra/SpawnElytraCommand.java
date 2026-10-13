@@ -28,37 +28,31 @@ public final class SpawnElytraCommand implements TabExecutor {
         switch (sub) {
             case "pos1", "pos2" -> {
                 if (!(sender instanceof Player p) || !admin(sender)) return true;
-                if (args.length < 2 || !(args[1].equalsIgnoreCase("launch") || args[1].equalsIgnoreCase("protect"))) {
-                    say(sender, "/" + label + " " + sub + " <launch|protect>", NamedTextColor.RED);
-                    return true;
-                }
-                String area = args[1].toLowerCase(Locale.ROOT);
                 int corner = sub.equals("pos1") ? 1 : 2;
-                plugin.setCorner(area, corner, p.getLocation());
-                Area a = area.equals("launch") ? plugin.launchArea() : plugin.protectArea();
-                say(sender, "Ecke " + corner + " von '" + area + "' gesetzt: " + Area.BlockPos.of(p.getLocation()).serialize(),
+                plugin.setCorner(corner, p.getLocation());
+                say(sender, "Insel-Ecke " + corner + " gesetzt: " + Area.BlockPos.of(p.getLocation()).serialize(),
                         NamedTextColor.GREEN);
-                say(sender, a == null ? "Bereich noch unvollständig (andere Ecke fehlt oder andere Welt)." : "Bereich: " + a.describe(),
+                Area a = plugin.island();
+                say(sender, a == null ? "Insel noch unvollständig (andere Ecke fehlt oder andere Welt)." : "Insel: " + a.describe(),
                         a == null ? NamedTextColor.YELLOW : NamedTextColor.GRAY);
             }
             case "setspawn" -> {
                 if (!(sender instanceof Player p) || !admin(sender)) return true;
                 plugin.setSpawnPoint(p.getLocation());
-                say(sender, "Spawnpunkt gesetzt (Erstjoin + Respawn ohne Bett/Anker).", NamedTextColor.GREEN);
-                if (plugin.launchArea() != null && !plugin.launchArea().contains(p.getLocation())) {
-                    say(sender, "Achtung: Der Spawnpunkt liegt NICHT im Absprungbereich.", NamedTextColor.YELLOW);
+                say(sender, "Spawnpunkt gesetzt (Erstjoin, Respawn ohne Bett/Anker, Auffangschutz).", NamedTextColor.GREEN);
+                if (!plugin.onIsland(p.getLocation())) {
+                    say(sender, "Achtung: Der Spawnpunkt liegt NICHT auf der Insel – dort gibt es keine Elytra.", NamedTextColor.YELLOW);
                 }
             }
             case "info" -> {
-                say(sender, "Absprungbereich: " + (plugin.launchArea() == null ? "nicht gesetzt" : plugin.launchArea().describe()), NamedTextColor.AQUA);
-                say(sender, "Spawnschutz:     " + (plugin.protectArea() == null ? "nicht gesetzt" : plugin.protectArea().describe()), NamedTextColor.AQUA);
-                say(sender, "Spawnpunkt:      " + (plugin.spawnPoint() == null ? "Vanilla" : Area.BlockPos.of(plugin.spawnPoint()).serialize()), NamedTextColor.AQUA);
+                say(sender, "Insel:      " + (plugin.island() == null ? "nicht gesetzt" : plugin.island().describe()), NamedTextColor.AQUA);
+                say(sender, "Spawnpunkt: " + (plugin.spawnPoint() == null ? "nicht gesetzt" : Area.BlockPos.of(plugin.spawnPoint()).serialize()), NamedTextColor.AQUA);
                 if (sender instanceof Player p) {
-                    say(sender, "Du: im Absprungbereich=" + (plugin.launchArea() != null && plugin.launchArea().contains(p.getLocation()))
-                            + ", im Schutz=" + plugin.isProtected(p.getLocation())
+                    say(sender, "Du: auf Insel=" + plugin.onIsland(p.getLocation())
                             + ", berechtigt=" + plugin.flights().isArmed(p)
                             + ", fliegt=" + plugin.flights().isFlying(p)
-                            + ", bypass=" + plugin.canBypass(p), NamedTextColor.GRAY);
+                            + ", bypass=" + plugin.canBypass(p)
+                            + ", Modus=" + p.getGameMode(), NamedTextColor.GRAY);
                 }
             }
             case "bypass" -> {
@@ -68,15 +62,16 @@ public final class SpawnElytraCommand implements TabExecutor {
                     return true;
                 }
                 boolean on = plugin.toggleBypass(p);
-                say(sender, "Spawnschutz-Bypass " + (on ? "AN – du darfst im Spawn bauen." : "AUS."),
+                say(sender, "Insel-Bypass " + (on ? "AN – du darfst auf der Insel bauen." : "AUS."),
                         on ? NamedTextColor.GOLD : NamedTextColor.GREEN);
             }
             case "test" -> {
                 if (!(sender instanceof Player p) || !admin(sender)) return true;
-                if (plugin.flights().armIfInside(p, p.getLocation())) {
-                    say(sender, "Berechtigt – spring jetzt ab.", NamedTextColor.GREEN);
+                if (plugin.flights().armIfOnIsland(p, p.getLocation())) {
+                    say(sender, "Berechtigt – spring ab und drück in der Luft die Leertaste. (Überlebens-/Abenteuermodus nötig)",
+                            NamedTextColor.GREEN);
                 } else {
-                    say(sender, "Du musst im Absprungbereich stehen (und darfst nicht schon fliegen).", NamedTextColor.RED);
+                    say(sender, "Du musst auf der Insel stehen (und darfst nicht schon fliegen).", NamedTextColor.RED);
                 }
             }
             case "reload" -> {
@@ -86,9 +81,8 @@ public final class SpawnElytraCommand implements TabExecutor {
             }
             default -> {
                 say(sender, "SpawnElytra", NamedTextColor.AQUA);
-                say(sender, "/" + label + " pos1|pos2 launch   – Ecke des Absprungbereichs (deine Position)", NamedTextColor.GRAY);
-                say(sender, "/" + label + " pos1|pos2 protect  – Ecke des Spawnschutzes", NamedTextColor.GRAY);
-                say(sender, "/" + label + " setspawn          – Spawnpunkt für Erstjoin/Respawn", NamedTextColor.GRAY);
+                say(sender, "/" + label + " pos1 | pos2   – Ecken der Insel (deine Position, inkl. Luftraum)", NamedTextColor.GRAY);
+                say(sender, "/" + label + " setspawn      – Spawnpunkt auf der Insel", NamedTextColor.GRAY);
                 say(sender, "/" + label + " info | bypass | test | reload", NamedTextColor.GRAY);
             }
         }
@@ -104,16 +98,10 @@ public final class SpawnElytraCommand implements TabExecutor {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return filter(List.of("pos1", "pos2", "setspawn", "info", "bypass", "test", "reload", "hilfe"), args[0]);
-        }
-        if (args.length == 2 && (args[0].equalsIgnoreCase("pos1") || args[0].equalsIgnoreCase("pos2"))) {
-            return filter(List.of("launch", "protect"), args[1]);
+            String p = args[0].toLowerCase(Locale.ROOT);
+            return List.of("pos1", "pos2", "setspawn", "info", "bypass", "test", "reload", "hilfe")
+                    .stream().filter(o -> o.startsWith(p)).toList();
         }
         return List.of();
-    }
-
-    private static List<String> filter(List<String> options, String prefix) {
-        String p = prefix.toLowerCase(Locale.ROOT);
-        return options.stream().filter(o -> o.startsWith(p)).toList();
     }
 }
