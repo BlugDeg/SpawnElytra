@@ -1,0 +1,18 @@
+name: SpawnElytra
+version: '${version}'
+main: ch.blugdeg.spawnelytra.SpawnElytraPlugin
+api-version: '26.2'
+description: Geister-Elytra beim Absprung vom Spawn und eigener Spawnschutz
+author: BlugDeg
+commands:
+  spawnelytra:
+    description: SpawnElytra verwalten
+    usage: /spawnelytra hilfe
+    aliases: [se]
+permissions:
+  spawnelytra.admin:
+    description: Bereiche und Spawnpunkt setzen, neu laden, testen
+    default: op
+  spawnelytra.bypass:
+    description: Darf den Spawnschutz per /se bypass fuer sich abschalten
+    default: op

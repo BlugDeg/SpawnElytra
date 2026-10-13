@@ -1,0 +1,59 @@
+# SpawnElytra – Konfiguration
+#
+# Bereiche setzt man am einfachsten ingame:
+#   /se pos1 launch   /se pos2 launch    -> Absprungbereich (Geister-Elytra)
+#   /se pos1 protect  /se pos2 protect   -> Spawnschutz-Bereich
+#   /se setspawn                         -> Spawnpunkt (Erstjoin + Respawn ohne Bett/Anker)
+# Format von Hand: "welt,x,y,z" (Blockkoordinaten, beide Ecken inklusive)
+
+areas:
+  launch:
+    pos1: ''
+    pos2: ''
+  protect:
+    pos1: ''
+    pos2: ''
+
+# Format: "welt,x,y,z,yaw,pitch". Leer = Vanilla-Verhalten (dann gamerule spawnRadius auf 0 setzen!)
+spawn-point: ''
+
+flight:
+  # So lange fliegt die Elytra normal und der Boost ist verfuegbar
+  duration-seconds: 60
+  # Mindesthoehe ueber festem Boden beim Verlassen des Absprungbereichs.
+  # Wer tiefer (z. B. zu Fuss) hinausgeht, verliert die Berechtigung.
+  min-height-above-ground: 2
+  # Sicherheitsgrenze: danach endet der Flug immer
+  max-seconds: 300
+  # Nach Landung/Ende: so lange kein Fall- und Wandaufprallschaden
+  grace-seconds: 3
+  decay:
+    # Ueber diese Zeit steigt der Tragflaechenverlust auf 100 %
+    ramp-seconds: 5
+    # Zusaetzliches Absinken pro Tick bei 100 %
+    sink-per-tick: 0.08
+    # Bremsen der Horizontalgeschwindigkeit pro Tick bei 100 %
+    horizontal-drag: 0.04
+    # Maximale Sinkgeschwindigkeit (Bloecke/Tick)
+    max-sink: 1.2
+
+boost:
+  cooldown-seconds: 5
+  # Rakete Flugdauer 2 wirkt im Vanilla etwa 30-40 Ticks
+  duration-ticks: 35
+  # Zielgeschwindigkeit wie bei Vanilla-Raketen (Bloecke/Tick)
+  speed: 1.5
+
+protection:
+  # Essen im Spawn erlauben (alle anderen Gegenstaende sind gesperrt)
+  allow-food: true
+
+messages:
+  armed: '<gray>Spring vom Spawn ab, um mit der <aqua>Geister-Elytra</aqua> zu gleiten.</gray>'
+  start: '<aqua>Geister-Elytra aktiv!</aqua> <gray>Boost mit <yellow>[F]</yellow></gray>'
+  hud-ready: '<aqua>✈ <white><time>s</white></aqua> <dark_gray>|</dark_gray> <green>Boost [F] bereit</green>'
+  hud-cooldown: '<aqua>✈ <white><time>s</white></aqua> <dark_gray>|</dark_gray> <gray>Boost in <yellow><cd>s</yellow></gray>'
+  hud-decay: '<red>Die Tragfläche lässt nach …</red>'
+  no-boost: '<red>Kein Boost mehr.</red>'
+  end: '<gray>Die Geister-Elytra hat sich aufgelöst.</gray>'
+  protected: '<red>Das ist im Spawn nicht erlaubt.</red>'
