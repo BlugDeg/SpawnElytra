@@ -27,6 +27,11 @@ public record Area(String world, int minX, int minY, int minZ, int maxX, int max
         return x >= minX && x < maxX + 1 && z >= minZ && z < maxZ + 1;
     }
 
+    /** Innerhalb der X/Z-Flaeche und nicht unterhalb der unteren Ecke – nach oben offen. */
+    public boolean containsAbove(Location loc) {
+        return containsColumn(loc) && loc.getY() >= minY;
+    }
+
     public String describe() {
         return world + " " + minX + "," + minY + "," + minZ + " → " + maxX + "," + maxY + "," + maxZ;
     }

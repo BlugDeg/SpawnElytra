@@ -47,7 +47,8 @@ public final class FlightManager implements Listener {
     private static final ItemStack GHOST_ELYTRA = new ItemStack(Material.ELYTRA);
 
     private final SpawnElytraPlugin plugin;
-    private final Set<UUID> armed = new HashSet<>();
+    /** berechtigte Spieler -> Ticks, die sie ausserhalb des Absprungbereichs auf dem Boden standen */
+    private final Map<UUID, Integer> armed = new HashMap<>();
     private final Map<UUID, Flight> flights = new HashMap<>();
     private final Map<UUID, Long> graceUntil = new HashMap<>();
     private long tick;
@@ -89,7 +90,7 @@ public final class FlightManager implements Listener {
     }
 
     public boolean isArmed(Player p) {
-        return armed.contains(p.getUniqueId());
+        return armed.containsKey(p.getUniqueId());
     }
 
     // --- Berechtigung --------------------------------------------------------
@@ -97,9 +98,9 @@ public final class FlightManager implements Listener {
     /** Berechtigt den Spieler, wenn er sich im Absprungbereich befindet. */
     public boolean armIfInside(Player p, Location where) {
         Area launch = plugin.launchArea();
-        if (launch == null || !launch.contains(where)) return false;
+        if (launch == null || !launch.containsAbove(where)) return false;
         if (isFlying(p)) return false;
-        armed.add(p.getUniqueId());
+        armed.put(p.getUniqueId(), 0);
         p.sendActionBar(plugin.msg("armed"));
         return true;
     }
@@ -154,27 +155,49 @@ public final class FlightManager implements Listener {
         disarm(e.getEntity());
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onMove(PlayerMoveEvent e) {
-        Player p = e.getPlayer();
-        if (!armed.contains(p.getUniqueId())) return;
+    /**
+     * Pro Tick fuer berechtigte Spieler: Solange sie im Absprungbereich (nach oben offen) sind, passiert nichts.
+     * Ausserhalb: sobald sie in der Luft sind (genug Hoehe oder am Fallen) -> Flug.
+     * Stehen sie ausserhalb laenger als ein paar Ticks auf dem Boden -> Berechtigung weg.
+     * (Beim Abgehen von der Kante steht die Hitbox noch kurz auf dem letzten Block, daher die Toleranz.)
+     */
+    private void tickArmed() {
         Area launch = plugin.launchArea();
-        if (launch == null) {
-            disarm(p);
-            return;
-        }
-        Location to = e.getTo();
-        if (launch.contains(to)) return;
-
-        // Bereich verlassen: in der Luft -> Flug, sonst Berechtigung weg
-        disarm(p);
-        GameMode gm = p.getGameMode();
-        if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) return;
-        if (p.isInsideVehicle() || p.isFlying()) return;
-        ItemStack chest = p.getInventory().getChestplate();
-        if (chest != null && chest.getType() == Material.ELYTRA) return; // hat eine echte
-        if (!p.isOnGround() && heightAboveGround(to) >= plugin.settings().minHeightAboveGround()) {
-            startFlight(p, to);
+        Settings s = plugin.settings();
+        for (Map.Entry<UUID, Integer> entry : new ArrayList<>(armed.entrySet())) {
+            Player p = Bukkit.getPlayer(entry.getKey());
+            if (p == null || !p.isOnline() || launch == null) {
+                armed.remove(entry.getKey());
+                continue;
+            }
+            Location loc = p.getLocation();
+            if (launch.containsAbove(loc)) {
+                armed.put(entry.getKey(), 0);
+                continue;
+            }
+            GameMode gm = p.getGameMode();
+            if (gm == GameMode.CREATIVE || gm == GameMode.SPECTATOR) {
+                disarm(p);
+                p.sendActionBar(plugin.msg("lost-gamemode"));
+                continue;
+            }
+            ItemStack chest = p.getInventory().getChestplate();
+            if (p.isInsideVehicle() || p.isFlying() || (chest != null && chest.getType() == Material.ELYTRA)) {
+                disarm(p);
+                continue;
+            }
+            if (!p.isOnGround() && (heightAboveGround(loc) >= s.minHeightAboveGround() || p.getFallDistance() >= 1.5f)) {
+                disarm(p);
+                startFlight(p, loc);
+                continue;
+            }
+            int groundTicks = p.isOnGround() ? entry.getValue() + 1 : entry.getValue();
+            if (groundTicks > 10) {
+                disarm(p);
+                p.sendActionBar(plugin.msg("lost"));
+            } else {
+                armed.put(entry.getKey(), groundTicks);
+            }
         }
     }
 
