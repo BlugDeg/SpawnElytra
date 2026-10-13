@@ -30,7 +30,9 @@ public final class SpawnElytraPlugin extends JavaPlugin {
 
         flights = new FlightManager(this);
         getServer().getPluginManager().registerEvents(flights, this);
-        getServer().getPluginManager().registerEvents(new ProtectionListener(this), this);
+        ProtectionListener protection = new ProtectionListener(this);
+        getServer().getPluginManager().registerEvents(protection, this);
+        protection.startMobSweep();
         flights.start();
 
         PluginCommand cmd = getCommand("spawnelytra");
@@ -104,7 +106,8 @@ public final class SpawnElytraPlugin extends JavaPlugin {
     // --- Spawnschutz-Helfer -------------------------------------------------
 
     public boolean isProtected(Location loc) {
-        return protectArea != null && protectArea.contains(loc);
+        if (protectArea == null) return false;
+        return settings.protectFullHeight() ? protectArea.containsColumn(loc) : protectArea.contains(loc);
     }
 
     public boolean canBypass(Player p) {

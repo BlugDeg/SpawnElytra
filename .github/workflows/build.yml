@@ -51,7 +51,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: spawnelytra
-          path: build/libs/SpawnElytra-*.jar
+          path: build/libs/SpawnElytra.jar
 
       - name: Release "latest" aktualisieren
         if: github.ref == 'refs/heads/main'
@@ -64,5 +64,5 @@ jobs:
           body: |
             Automatischer Build von ${{ github.sha }} · Paper-API ${{ steps.v.outputs.paper }}
 
-            SpawnElytra-*.jar → in den plugins-Ordner des Servers
-          files: build/libs/SpawnElytra-*.jar
+            SpawnElytra.jar → in den plugins-Ordner des Servers
+          files: build/libs/SpawnElytra.jar

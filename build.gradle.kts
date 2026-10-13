@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "ch.blugdeg"
-version = "1.0.0"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -36,5 +36,5 @@ tasks.processResources {
 }
 
 tasks.jar {
-    archiveFileName.set("SpawnElytra-${project.version}.jar")
+    archiveFileName.set("SpawnElytra.jar")
 }

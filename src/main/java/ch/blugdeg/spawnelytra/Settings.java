@@ -15,7 +15,8 @@ public record Settings(
         int boostCooldownTicks,
         int boostDurationTicks,
         double boostSpeed,
-        boolean allowFood) {
+        boolean allowFood,
+        boolean protectFullHeight) {
 
     public static Settings load(FileConfiguration c) {
         return new Settings(
@@ -30,6 +31,7 @@ public record Settings(
                 (int) Math.round(c.getDouble("boost.cooldown-seconds", 5) * 20),
                 c.getInt("boost.duration-ticks", 35),
                 c.getDouble("boost.speed", 1.5),
-                c.getBoolean("protection.allow-food", true));
+                c.getBoolean("protection.allow-food", true),
+                c.getBoolean("protection.full-height", true));
     }
 }

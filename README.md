@@ -8,11 +8,11 @@ Paper-Plugin (26.2) für den Spawn:
   - **Bodenkontakt**, Wasser, Tod, Teleport, Logout → sofort alles weg
   - Wer in den Bereich hineinfliegt oder -läuft, bekommt **nichts** (kein Endlos-Flug mit eigener Elytra/Mace)
   - Kein Fall- und Wandaufprallschaden während des Flugs und 3 s danach
-- **Eigener Spawnschutz** im Schutzbereich: kein Bauen/Abbauen, kein PvP, keine Gegenstände (Raketen, Windkugeln, Perlen, Bögen …), keine Truhen/Türen/Knöpfe, kein Mob-Spawning, keine Explosionen, kein Feuer, keine Flüssigkeiten/Kolben von aussen. Essen ist erlaubt.
+- **Eigener Spawnschutz** im Schutzbereich (standardmässig über die ganze Höhe): kein Schaden, kein Hunger, feindliche Mobs werden entfernt, kein Bauen/Abbauen, kein PvP, keine Gegenstände (Raketen, Windkugeln, Perlen, Bögen …), keine Truhen/Türen/Knöpfe, kein Mob-Spawning, keine Explosionen, kein Feuer, keine Flüssigkeiten/Kolben von aussen. Essen ist erlaubt.
 
 ## Installation
 
-1. `SpawnElytra-*.jar` aus dem Release **latest** in den `plugins`-Ordner, Server neu starten.
+1. `SpawnElytra.jar` aus dem Release **latest** in den `plugins`-Ordner, Server neu starten.
 2. In `server.properties`: `spawn-protection=0` (Vanilla-Spawnschutz aus).
 3. Ingame (als OP):
    ```

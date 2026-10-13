@@ -1,7 +1,13 @@
 package ch.blugdeg.spawnelytra;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.entity.Enemy;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Entity;
@@ -201,7 +207,53 @@ public final class ProtectionListener implements Listener {
         if (p == null || !plugin.canBypass(p)) e.setCancelled(true);
     }
 
+    // --- Kein Schaden, kein Hunger -----------------------------------------
+
+    /** Spieler im Spawn nehmen keinen Schaden – ausser Void und /kill, damit niemand feststeckt. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onAnyDamage(EntityDamageEvent e) {
+        if (!(e.getEntity() instanceof Player p)) return;
+        EntityDamageEvent.DamageCause c = e.getCause();
+        if (c == EntityDamageEvent.DamageCause.VOID || c == EntityDamageEvent.DamageCause.KILL) return;
+        if (prot(p.getLocation())) e.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onHunger(FoodLevelChangeEvent e) {
+        if (!(e.getEntity() instanceof Player p)) return;
+        if (e.getFoodLevel() < p.getFoodLevel() && prot(p.getLocation())) e.setCancelled(true);
+    }
+
     // --- Mobs ---------------------------------------------------------------
+
+    /** Feindliche Mobs, die von aussen hineinlaufen, entfernen (benannte Mobs bleiben). */
+    public void startMobSweep() {
+        Bukkit.getScheduler().runTaskTimer(plugin, this::sweepMobs, 20L, 20L);
+    }
+
+    private void sweepMobs() {
+        Area a = plugin.protectArea();
+        if (a == null) return;
+        World w = Bukkit.getWorld(a.world());
+        if (w == null) return;
+        for (int cx = a.minX() >> 4; cx <= a.maxX() >> 4; cx++) {
+            for (int cz = a.minZ() >> 4; cz <= a.maxZ() >> 4; cz++) {
+                if (!w.isChunkLoaded(cx, cz)) continue;
+                for (Entity ent : w.getChunkAt(cx, cz).getEntities()) {
+                    if (ent instanceof Enemy && ent.customName() == null && prot(ent.getLocation())) {
+                        ent.remove();
+                    }
+                }
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onTarget(EntityTargetLivingEntityEvent e) {
+        if (e.getEntity() instanceof Enemy && e.getTarget() instanceof Player p && prot(p.getLocation())) {
+            e.setCancelled(true);
+        }
+    }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onSpawn(CreatureSpawnEvent e) {

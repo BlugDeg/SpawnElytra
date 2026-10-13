@@ -47,6 +47,9 @@ boost:
 protection:
   # Essen im Spawn erlauben (alle anderen Gegenstaende sind gesperrt)
   allow-food: true
+  # true = Schutz gilt ueber die ganze Hoehe (Bedrock bis Himmel), nur X/Z der Ecken zaehlen.
+  # false = nur zwischen den Y-Werten von pos1/pos2.
+  full-height: true
 
 messages:
   armed: '<gray>Spring vom Spawn ab, um mit der <aqua>Geister-Elytra</aqua> zu gleiten.</gray>'

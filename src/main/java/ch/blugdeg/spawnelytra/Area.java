@@ -20,6 +20,13 @@ public record Area(String world, int minX, int minY, int minZ, int maxX, int max
                 && z >= minZ && z < maxZ + 1;
     }
 
+    /** Wie contains, aber ueber die ganze Weltenhoehe (nur X/Z zaehlen). */
+    public boolean containsColumn(Location loc) {
+        if (loc == null || loc.getWorld() == null || !loc.getWorld().getName().equals(world)) return false;
+        double x = loc.getX(), z = loc.getZ();
+        return x >= minX && x < maxX + 1 && z >= minZ && z < maxZ + 1;
+    }
+
     public String describe() {
         return world + " " + minX + "," + minY + "," + minZ + " → " + maxX + "," + maxY + "," + maxZ;
     }
