@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "ch.blugdeg"
-version = "1.3.0"
+version = "1.4.0"
 
 repositories {
     mavenCentral()
@@ -11,7 +11,7 @@ repositories {
 }
 
 // Die genaue Paper-Version setzt der GitHub-Workflow (-PpaperVersion=...).
-val paperVersion: String = (findProperty("paperVersion") as String?) ?: "26.2.+"
+val paperVersion: String = (findProperty("paperVersion") as String?) ?: "26.3.+"
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:$paperVersion")

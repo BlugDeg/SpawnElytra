@@ -18,13 +18,13 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      - name: Paper-API-Version fuer 26.2 ermitteln
+      - name: Paper-API-Version fuer 26.3 ermitteln
         id: v
         run: |
           set -e
           meta() { curl -fsSL "$1/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | sed -e 's/<[^>]*>//g'; }
-          PAPER=$(meta https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api | grep '^26\.2' | grep -viE 'snapshot|pre|rc' | tail -1 || true)
-          if [ -z "$PAPER" ]; then PAPER=$(meta https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api | grep '^26\.2' | tail -1); fi
+          PAPER=$(meta https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api | grep '^26\.3' | grep -viE 'snapshot|pre|rc' | tail -1 || true)
+          if [ -z "$PAPER" ]; then PAPER=$(meta https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api | grep '^26\.3' | tail -1); fi
           echo "Paper API: $PAPER"
           echo "paper=$PAPER" >> "$GITHUB_OUTPUT"
 
