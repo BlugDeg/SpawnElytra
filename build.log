@@ -1,0 +1,54 @@
+Fetching distribution.
+Downloading https://services.gradle.org/distributions/gradle-9.7.1-bin.zip
+..............10%..............20%...............30%..............40%...............50%..............60%...............70%..............80%..............90%...............100%
+
+Welcome to Gradle 9.7.1!
+
+Here are the highlights of this release:
+ - Isolated Projects graduates to incubating
+ - Broader Configuration Cache compatibility
+ - Resilient Sync helps you fix broken builds
+ - More source locations in problem reports
+
+For more details see https://docs.gradle.org/9.7.1/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.7.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Task :compileJava
+/home/runner/work/SpawnElytra/SpawnElytra/src/main/java/ch/blugdeg/spawnelytra/FlightManager.java:280: warning: [deprecation] isOnGround() in Player has been deprecated
+        if (p.isOnGround()) return "steht auf dem Boden (normaler Sprung)";
+             ^
+/home/runner/work/SpawnElytra/SpawnElytra/src/main/java/ch/blugdeg/spawnelytra/FlightManager.java:398: warning: [deprecation] isOnGround() in Player has been deprecated
+        if (!e.isGliding() && flights.containsKey(p.getUniqueId()) && !p.isOnGround() && !p.isInWater()) {
+                                                                        ^
+/home/runner/work/SpawnElytra/SpawnElytra/src/main/java/ch/blugdeg/spawnelytra/FlightManager.java:512: warning: [deprecation] isOnGround() in Player has been deprecated
+            } else if (p.isOnGround() || p.isInWater() || p.isInLava() || p.isInsideVehicle()) {
+                        ^
+/home/runner/work/SpawnElytra/SpawnElytra/src/main/java/ch/blugdeg/spawnelytra/FlightManager.java:519: warning: [deprecation] isOnGround() in Player has been deprecated
+            if (!p.isOnGround() && p.getFallDistance() > 3f && tick % 10 == 0) {
+                  ^
+/home/runner/work/SpawnElytra/SpawnElytra/src/main/java/ch/blugdeg/spawnelytra/FlightManager.java:543: warning: [deprecation] isOnGround() in Player has been deprecated
+            boolean landed = age >= 2 && (p.isOnGround() || p.isInWater() || p.isInLava());
+                                           ^
+/home/runner/work/SpawnElytra/SpawnElytra/src/main/java/ch/blugdeg/spawnelytra/ProtectionListener.java:154: warning: [deprecation] isInteractable() in Material has been deprecated
+        boolean blockUse = clicked != null && clicked.getType().isInteractable();
+                                                               ^
+6 warnings
+
+> Task :processResources
+> Task :classes
+> Task :jar
+> Task :assemble
+> Task :compileTestJava NO-SOURCE
+> Task :processTestResources NO-SOURCE
+> Task :testClasses UP-TO-DATE
+> Task :test NO-SOURCE
+> Task :check UP-TO-DATE
+> Task :build
+
+[Incubating] Problems report is available at: file:///home/runner/work/SpawnElytra/SpawnElytra/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 44s
+3 actionable tasks: 3 executed
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.7.1/userguide/configuration_cache_enabling.html
