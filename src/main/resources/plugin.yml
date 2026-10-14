@@ -1,7 +1,7 @@
 name: SpawnElytra
 version: '${version}'
 main: ch.blugdeg.spawnelytra.SpawnElytraPlugin
-api-version: '26.2'
+api-version: '26.3'
 description: Geister-Elytra beim Absprung vom Spawn und eigener Spawnschutz
 author: BlugDeg
 commands:

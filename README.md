@@ -1,6 +1,6 @@
 # SpawnElytra
 
-Paper-Plugin (26.2) für eine fliegende Spawn-Insel.
+Paper-Plugin (26.3) für eine fliegende Spawn-Insel.
 
 ## Die Insel
 Ein Quader (inkl. Luftraum), den du selbst setzt. Er ist Spawn, Schutzzone und Absprung zugleich. **Ober- und unterhalb** des Quaders gilt nichts davon – dort darf jeder bauen.
